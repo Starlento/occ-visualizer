@@ -1,0 +1,21 @@
+[project]
+name = "workspace-visualizers"
+version = "0.1.0"
+description = "Visualization utilities for occupancy grids"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=2.4.3",
+]
+
+[project.optional-dependencies]
+occupancy = [
+    "mayavi>=4.8.3",
+    "pyvirtualdisplay>=3.0; platform_system != 'Windows'",
+]
+
+[build-system]
+requires = ["setuptools>=81.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+package = false
