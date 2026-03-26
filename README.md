@@ -26,10 +26,22 @@ If you need to recreate the environment:
 uv venv --python 3.12 .venv
 ```
 
+Activate the virtual environment:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+On macOS or Linux:
+
+```bash
+source .venv/bin/activate
+```
+
 Install the base dependencies:
 
 ```powershell
-d:/projects/workspace/.venv/Scripts/python.exe -m pip install numpy imageio imageio-ffmpeg
+python -m pip install numpy imageio imageio-ffmpeg
 ```
 
 Install Mayavi separately according to your platform constraints.
@@ -77,7 +89,7 @@ The example script creates a simple synthetic scene:
 Run:
 
 ```powershell
-d:/projects/workspace/.venv/Scripts/python.exe .\examples\example_moving_occ_sequence.py
+python .\examples\example_moving_occ_sequence.py
 ```
 
 By default, the script writes frames into:
@@ -95,7 +107,7 @@ Use this example when you want to inspect one occupancy frame interactively in a
 Run:
 
 ```powershell
-d:/projects/workspace/.venv/Scripts/python.exe .\examples\example_single_occ_interactive.py
+python .\examples\example_single_occ_interactive.py
 ```
 
 This example:
@@ -117,13 +129,13 @@ Arguments:
 Example:
 
 ```powershell
-d:/projects/workspace/.venv/Scripts/python.exe .\merge_png_sequence.py .\outputs 10
+python .\merge_png_sequence.py .\outputs 10
 ```
 
 Example with explicit output path:
 
 ```powershell
-d:/projects/workspace/.venv/Scripts/python.exe .\merge_png_sequence.py .\outputs 10 --output .\outputs\moving_car.mp4
+python .\merge_png_sequence.py .\outputs 10 --output .\outputs\moving_car.mp4
 ```
 
 ## Notes
