@@ -237,7 +237,7 @@ def save_occ(save_dir, occupancy, name, sem=False, cap=2, dataset="nusc", show=F
     mlab.draw(figure=figure)
     mlab.savefig(output_path)
     if show and not _OFFSCREEN:
-        mlab.show(stop=True)
+        mlab.show()
     mlab.close(figure)
     mlab.options.offscreen = previous_offscreen
 
