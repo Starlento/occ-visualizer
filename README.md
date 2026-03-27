@@ -38,13 +38,35 @@ On macOS or Linux:
 source .venv/bin/activate
 ```
 
-Install the base dependencies:
+Sync the base dependencies declared in `pyproject.toml`:
 
 ```powershell
-python -m pip install numpy imageio imageio-ffmpeg
+uv sync
 ```
 
-Install Mayavi separately according to your platform constraints.
+This installs:
+
+- `numpy` for occupancy grid creation and processing
+- `imageio` and `imageio-ffmpeg` for MP4 export
+
+Install the optional occupancy-rendering stack as needed:
+
+```powershell
+uv sync --extra occupancy
+```
+
+The `occupancy` extra adds:
+
+- `mayavi` for occupancy rendering
+- `pyvirtualdisplay` on non-Windows platforms for headless rendering support
+
+If you prefer `pip`, note that a `uv venv` environment may not include `pip` initially. Bootstrap it first:
+
+```powershell
+python -m ensurepip --upgrade
+python -m pip install -e .
+python -m pip install mayavi
+```
 
 ## Render a Single Occupancy Grid
 

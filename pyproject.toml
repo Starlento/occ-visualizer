@@ -1,15 +1,18 @@
 [project]
-name = "workspace-visualizers"
+name = "occ-visualizer"
 version = "0.1.0"
-description = "Visualization utilities for occupancy grids"
+description = "Utilities for rendering occupancy grids and merging PNG sequences into MP4 videos"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "numpy>=2.4.3",
+    "numpy>=1.26.4,<2",
+    "imageio>=2.37.0",
+    "imageio-ffmpeg>=0.6.0",
 ]
 
 [project.optional-dependencies]
 occupancy = [
-    "mayavi>=4.8.3",
+    "vtk==9.3.1",
+    "mayavi==4.8.3",
     "pyvirtualdisplay>=3.0; platform_system != 'Windows'",
 ]
 
@@ -19,3 +22,9 @@ build-backend = "setuptools.build_meta"
 
 [tool.uv]
 package = false
+
+[tool.uv.extra-build-dependencies]
+mayavi = [
+    "vtk==9.3.1",
+    "setuptools>=81,<82",
+]
