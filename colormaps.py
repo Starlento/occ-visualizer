@@ -1,6 +1,23 @@
 import numpy as np
 
 
+XC_CN_CLASS_NAMES = {
+    0: "free",
+    1: "vehicle",
+    2: "pedestrian",
+    3: "other_stable_obstacle",
+    4: "other_dynamic_obstacle",
+    5: "wall_door",
+    6: "pillar",
+    7: "curb",
+    8: "stopper_locker",
+    9: "higher_roadway",
+    10: "unknown",
+    11: "freespace",
+    12: "ghost_obstacle",
+}
+
+
 def get_nuscenes_colormap():
     return np.array(
         [
@@ -21,6 +38,27 @@ def get_nuscenes_colormap():
             [150, 240, 80, 255],
             [230, 230, 250, 255],
             [0, 175, 0, 255],
+        ],
+        dtype=np.uint8,
+    )
+
+
+def get_xc_cn_colormap():
+    return np.array(
+        [
+            [0, 0, 0, 255],
+            [255, 120, 50, 255],
+            [255, 192, 203, 255],
+            [255, 255, 0, 255],
+            [0, 150, 245, 255],
+            [0, 255, 255, 255],
+            [255, 127, 0, 255],
+            [255, 0, 0, 255],
+            [255, 240, 150, 255],
+            [135, 60, 0, 255],
+            [160, 32, 240, 255],
+            [0, 175, 0, 255],
+            [230, 230, 250, 255],
         ],
         dtype=np.uint8,
     )
@@ -81,7 +119,9 @@ def get_kitti360_colormap():
 
 
 __all__ = [
+    "XC_CN_CLASS_NAMES",
     "get_kitti360_colormap",
     "get_kitti_colormap",
     "get_nuscenes_colormap",
+    "get_xc_cn_colormap",
 ]

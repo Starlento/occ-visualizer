@@ -3,7 +3,7 @@ from importlib import import_module
 
 import numpy as np
 
-from colormaps import get_kitti360_colormap, get_kitti_colormap, get_nuscenes_colormap
+from colormaps import get_kitti360_colormap, get_kitti_colormap, get_nuscenes_colormap, get_xc_cn_colormap
 
 _OFFSCREEN = False
 _DATASET_CONFIGS = {
@@ -31,6 +31,22 @@ _DATASET_CONFIGS = {
         "semantic_upper_bound": 19,
         "semantic_colormap": (get_kitti360_colormap()[1:, :] * 255).astype(np.uint8),
     },
+    "xc-cn": {
+        "voxel_size": [0.5, 0.5, 0.5],
+        "vox_origin": [-50.0, -50.0, -5.0],
+        "vmin": 0,
+        "vmax": 12,
+        "semantic_upper_bound": 13,
+        "semantic_colormap": get_xc_cn_colormap(),
+    },
+    "xccn": {
+        "voxel_size": [0.5, 0.5, 0.5],
+        "vox_origin": [-50.0, -50.0, -5.0],
+        "vmin": 0,
+        "vmax": 12,
+        "semantic_upper_bound": 13,
+        "semantic_colormap": get_xc_cn_colormap(),
+    },
 }
 _CAMERA_PRESET = {
     "position": [-107.15500034628069, -0.008333206176756742, 92.16667026873841],
@@ -39,6 +55,9 @@ _CAMERA_PRESET = {
     "view_up": [0.6463156430702277, -6.4549254142909245e-18, 0.7630701733934555],
     "clipping_range": [78.84362692774403, 218.2948716014858],
 }
+_FIGURE_MIN_SIDE = 1400
+_FIGURE_MAX_SIDE = 2200
+_CAMERA_FRAME_MARGIN = 1.02
 
 
 def _start_virtual_display():
@@ -85,7 +104,7 @@ def get_grid_coords(dims, resolution):
     g_yy = np.arange(0, dims[1])
     g_zz = np.arange(0, dims[2])
 
-    xx, yy, zz = np.meshgrid(g_xx, g_yy, g_zz)
+    xx, yy, zz = np.meshgrid(g_xx, g_yy, g_zz, indexing="ij")
     coords_grid = np.array([xx.flatten(), yy.flatten(), zz.flatten()]).T.astype(np.float32)
     resolution = np.array(resolution, dtype=np.float32).reshape([1, 3])
     return (coords_grid * resolution) + resolution / 2
@@ -142,8 +161,28 @@ def _filter_visible_voxels(grid_coords, sem, dataset_config, empty_label):
     return grid_coords[visible_mask]
 
 
-def _create_figure(mlab, show):
-    figure = mlab.figure(size=(2560, 1440), bgcolor=(1, 1, 1))
+def _get_figure_size(voxel_shape, dataset_config):
+    extents = np.array(voxel_shape[:2], dtype=np.float32) * np.array(dataset_config["voxel_size"][:2], dtype=np.float32)
+    horizontal_aspect = float(extents[0] / max(extents[1], 1e-6))
+
+    if horizontal_aspect >= 1.0:
+        height = _FIGURE_MIN_SIDE
+        width = int(round(height * horizontal_aspect))
+        if width > _FIGURE_MAX_SIDE:
+            width = _FIGURE_MAX_SIDE
+            height = int(round(width / horizontal_aspect))
+    else:
+        width = _FIGURE_MIN_SIDE
+        height = int(round(width / horizontal_aspect))
+        if height > _FIGURE_MAX_SIDE:
+            height = _FIGURE_MAX_SIDE
+            width = int(round(height * horizontal_aspect))
+
+    return max(width, 1), max(height, 1)
+
+
+def _create_figure(mlab, show, figure_size):
+    figure = mlab.figure(size=figure_size, bgcolor=(1, 1, 1))
     figure.scene.off_screen_rendering = _should_render_offscreen(show)
     return figure
 
@@ -165,35 +204,79 @@ def _apply_semantic_lut(plot, dataset_config):
     plot.module_manager.scalar_lut_manager.lut.table = dataset_config["semantic_colormap"]
 
 
-def _apply_camera_path(scene):
-    scene.camera.position = [118.7195754824976, 118.70290907014409, 120.11124225247899]
-    scene.camera.focal_point = _CAMERA_PRESET["focal_point"]
-    scene.camera.view_angle = _CAMERA_PRESET["view_angle"]
-    scene.camera.view_up = [0.0, 0.0, 1.0]
-    scene.camera.clipping_range = [114.42016931210819, 320.9039783052695]
-    scene.camera.compute_view_plane_normal()
-    scene.render()
+def _get_scene_bounds(voxel_shape, dataset_config):
+    voxel_size = np.array(dataset_config["voxel_size"], dtype=np.float32)
+    origin = np.array(dataset_config["vox_origin"], dtype=np.float32)
+    dims = np.array(voxel_shape, dtype=np.float32)
+    mins = origin
+    maxs = origin + (dims * voxel_size)
+    return mins, maxs
 
-    for _ in range(26):
-        scene.camera.azimuth(5)
-        scene.render()
 
-    scene.camera.azimuth(-135)
-    scene.render()
-    scene.camera.position = _CAMERA_PRESET["position"]
-    scene.camera.focal_point = _CAMERA_PRESET["focal_point"]
+def _get_bounds_corners(mins, maxs):
+    return np.array(
+        [
+            [mins[0], mins[1], mins[2]],
+            [mins[0], mins[1], maxs[2]],
+            [mins[0], maxs[1], mins[2]],
+            [mins[0], maxs[1], maxs[2]],
+            [maxs[0], mins[1], mins[2]],
+            [maxs[0], mins[1], maxs[2]],
+            [maxs[0], maxs[1], mins[2]],
+            [maxs[0], maxs[1], maxs[2]],
+        ],
+        dtype=np.float32,
+    )
+
+
+def _to_plot_space(coords):
+    plot_coords = np.array(coords, dtype=np.float32, copy=True)
+    plot_coords[:, 1] *= -1.0
+    return plot_coords
+
+
+def _apply_camera_path(scene, voxel_shape, dataset_config, figure_size):
+    mins, maxs = _get_scene_bounds(voxel_shape, dataset_config)
+    corners = _to_plot_space(_get_bounds_corners(mins, maxs))
+    center = (corners.min(axis=0) + corners.max(axis=0)) / 2.0
+    corners = corners - center
+
+    base_focal = np.array(_CAMERA_PRESET["focal_point"], dtype=np.float32)
+    base_position = np.array(_CAMERA_PRESET["position"], dtype=np.float32)
+    camera_offset = base_position - base_focal
+    camera_offset = camera_offset / np.linalg.norm(camera_offset)
+    forward = -camera_offset
+    up = np.array(_CAMERA_PRESET["view_up"], dtype=np.float32)
+    up = up / np.linalg.norm(up)
+    right = np.cross(forward, up)
+    right = right / np.linalg.norm(right)
+    up = np.cross(right, forward)
+    up = up / np.linalg.norm(up)
+
+    aspect_ratio = figure_size[0] / figure_size[1]
+    vertical_fov = np.deg2rad(_CAMERA_PRESET["view_angle"])
+    horizontal_fov = 2.0 * np.arctan(np.tan(vertical_fov / 2.0) * aspect_ratio)
+
+    projected_x = np.abs(corners @ right)
+    projected_y = np.abs(corners @ up)
+    projected_z = np.abs(corners @ forward)
+
+    projected_half_width = float(projected_x.max())
+    projected_half_height = float(projected_y.max())
+    projected_half_depth = float(projected_z.max())
+
+    height_distance = projected_half_height / np.tan(vertical_fov / 2.0)
+    width_distance = projected_half_width / np.tan(horizontal_fov / 2.0)
+    distance = (max(height_distance, width_distance) + projected_half_depth) * _CAMERA_FRAME_MARGIN
+
+    position = center + (camera_offset * distance)
+
+    scene.camera.position = position.tolist()
+    scene.camera.focal_point = center.tolist()
     scene.camera.view_angle = _CAMERA_PRESET["view_angle"]
-    scene.camera.view_up = _CAMERA_PRESET["view_up"]
-    scene.camera.clipping_range = _CAMERA_PRESET["clipping_range"]
+    scene.camera.view_up = up.tolist()
+    scene.camera.clipping_range = [max(distance - projected_half_depth * 2.5, 1.0), distance + projected_half_depth * 2.5]
     scene.camera.compute_view_plane_normal()
-    scene.render()
-    scene.camera.elevation(5)
-    scene.camera.orthogonalize_view_up()
-    scene.render()
-    scene.camera.elevation(5)
-    scene.camera.orthogonalize_view_up()
-    scene.render()
-    scene.camera.elevation(-5)
     scene.camera.orthogonalize_view_up()
     scene.render()
 
@@ -214,7 +297,8 @@ def save_occ(save_dir, occupancy, name, sem=False, cap=2, dataset="nusc", show=F
     mlab = _get_mlab(show=show)
     previous_offscreen = mlab.options.offscreen
     mlab.options.offscreen = _should_render_offscreen(show)
-    figure = _create_figure(mlab, show=show)
+    figure_size = _get_figure_size(voxels.shape, dataset_config)
+    figure = _create_figure(mlab, show=show, figure_size=figure_size)
     points_kwargs = _build_points_kwargs(dataset_config, sem=sem)
 
     plot = mlab.points3d(
@@ -230,7 +314,7 @@ def save_occ(save_dir, occupancy, name, sem=False, cap=2, dataset="nusc", show=F
         _apply_semantic_lut(plot, dataset_config)
 
     scene = figure.scene
-    _apply_camera_path(scene)
+    _apply_camera_path(scene, voxels.shape, dataset_config, figure_size)
 
     os.makedirs(save_dir, exist_ok=True)
     output_path = os.path.join(save_dir, f"{name}.png")
