@@ -214,12 +214,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "imageio" },
     { name = "imageio-ffmpeg" },
-    { name = "numpy" },
-]
-
-[package.optional-dependencies]
-occupancy = [
     { name = "mayavi" },
+    { name = "numpy" },
     { name = "pyvirtualdisplay", marker = "sys_platform != 'win32'" },
     { name = "vtk" },
 ]
@@ -228,12 +224,11 @@ occupancy = [
 requires-dist = [
     { name = "imageio", specifier = ">=2.37.0" },
     { name = "imageio-ffmpeg", specifier = ">=0.6.0" },
-    { name = "mayavi", marker = "extra == 'occupancy'", specifier = "==4.8.3" },
+    { name = "mayavi", specifier = "==4.8.3" },
     { name = "numpy", specifier = ">=1.26.4,<2" },
-    { name = "pyvirtualdisplay", marker = "sys_platform != 'win32' and extra == 'occupancy'", specifier = ">=3.0" },
-    { name = "vtk", marker = "extra == 'occupancy'", specifier = "==9.3.1" },
+    { name = "pyvirtualdisplay", marker = "sys_platform != 'win32'", specifier = ">=3.0" },
+    { name = "vtk", specifier = "==9.3.1" },
 ]
-provides-extras = ["occupancy"]
 
 [[package]]
 name = "packaging"

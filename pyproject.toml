@@ -7,10 +7,6 @@ dependencies = [
     "numpy>=1.26.4,<2",
     "imageio>=2.37.0",
     "imageio-ffmpeg>=0.6.0",
-]
-
-[project.optional-dependencies]
-occupancy = [
     "vtk==9.3.1",
     "mayavi==4.8.3",
     "pyvirtualdisplay>=3.0; platform_system != 'Windows'",
