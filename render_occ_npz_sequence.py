@@ -5,11 +5,13 @@ from pathlib import Path
 import numpy as np
 
 from occupancy_visualizer import save_occ
+from merge_image_sequence import merge_image_sequence
 
 
 DEFAULT_INPUT_DIR = (
     Path(__file__).resolve().parent
-    / "2a548472d8f5713112606b241325839f"
+    / "data"
+    / "4af3e12ea8ace222e59743f5c1370a12"
     / "occ"
 )
 
@@ -56,6 +58,12 @@ def _parse_args():
         action="store_true",
         help="Disable the default transpose from (Z, X, Y) to (X, Y, Z).",
     )
+    parser.add_argument(
+        "--hz",
+        type=float,
+        default=10.0,
+        help="Frame rate for the output MP4. Defaults to 10.",
+    )
     return parser.parse_args()
 
 
@@ -90,6 +98,8 @@ def render_occ_npz_sequence(
     occupancy_key="occ_voxel",
     limit=None,
     transpose_zxy_to_xyz=True,
+    hz=10.0,
+    merge_video=True,
 ):
     input_dir = Path(input_dir)
     if not input_dir.exists() or not input_dir.is_dir():
@@ -123,6 +133,11 @@ def render_occ_npz_sequence(
         _print_progress(index, total)
 
     print(f"Generated {total} PNG frames in {output_dir.resolve()}")
+
+    if merge_video:
+        mp4_path = output_dir.parent / "sequence.mp4"
+        merge_image_sequence(output_dir, hz, mp4_path)
+
     return output_dir
 
 
@@ -136,6 +151,7 @@ def main():
         occupancy_key=args.occupancy_key,
         limit=args.limit,
         transpose_zxy_to_xyz=not args.no_transpose,
+        hz=args.hz,
     )
 
 

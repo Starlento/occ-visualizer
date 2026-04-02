@@ -8,6 +8,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from occupancy_visualizer import save_occ
+from merge_image_sequence import merge_image_sequence
 
 
 FRAME_RATE_HZ = 10
@@ -96,6 +97,9 @@ def main():
         _print_progress(frame_index + 1, NUM_FRAMES)
 
     print(f"Generated {NUM_FRAMES} frames in {OUTPUT_DIR.resolve()}")
+
+    mp4_path = OUTPUT_DIR / "sequence.mp4"
+    merge_image_sequence(OUTPUT_DIR, FRAME_RATE_HZ, mp4_path)
 
 
 if __name__ == "__main__":
