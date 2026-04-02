@@ -1,12 +1,13 @@
 import argparse
+import subprocess
+import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from statistics import median
 from pathlib import Path
 
-from pipeline import run_pipeline
-
-
-DEFAULT_DATA_DIR = Path(__file__).resolve().parent / "data"
+ROOT_DIR = Path(__file__).resolve().parent
+DEFAULT_DATA_DIR = ROOT_DIR / "data"
 
 
 def _parse_args():
@@ -21,6 +22,12 @@ def _parse_args():
         "--reuse-occ-png",
         action="store_true",
         help="Reuse existing occ_png frames instead of rendering them again.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of clips to process in parallel. Defaults to 1.",
     )
     parser.add_argument(
         "--fail-fast",
@@ -62,6 +69,45 @@ def _infer_hz_from_occ_dir(occ_dir: Path) -> float:
     return 1.0 / frame_interval
 
 
+def _extract_merged_video_to_data_root(data_dir: Path, clip_dir: Path) -> None:
+    source = clip_dir / "merged.mp4"
+    if not source.is_file():
+        raise FileNotFoundError(f"Expected merged video not found: {source}")
+
+    destination = data_dir / f"{clip_dir.name}.mp4"
+    source.replace(destination)
+    print(f"Moved merged video to: {destination.name}")
+
+
+def _run_pipeline_subprocess(clip_dir: Path, hz: float, reuse_occ_png: bool) -> None:
+    command = [
+        sys.executable,
+        str(ROOT_DIR / "pipeline.py"),
+        str(clip_dir),
+        str(hz),
+    ]
+    if reuse_occ_png:
+        command.append("--reuse-occ-png")
+
+    process = subprocess.run(
+        command,
+        cwd=str(ROOT_DIR),
+        capture_output=True,
+        text=True,
+    )
+    if process.returncode != 0:
+        tail = (process.stderr or process.stdout or "").strip().splitlines()[-10:]
+        detail = "\n".join(tail)
+        raise RuntimeError(f"pipeline.py failed (exit={process.returncode})\n{detail}")
+
+
+def _process_clip(data_dir: Path, clip_dir: Path, reuse_occ_png: bool) -> tuple[Path, float]:
+    hz = _infer_hz_from_occ_dir(clip_dir / "occ")
+    _run_pipeline_subprocess(clip_dir, hz, reuse_occ_png)
+    _extract_merged_video_to_data_root(data_dir, clip_dir)
+    return clip_dir, hz
+
+
 def main() -> None:
     args = _parse_args()
     data_dir = args.data_dir.resolve()
@@ -70,22 +116,40 @@ def main() -> None:
 
     clip_dirs = _get_clip_dirs(data_dir)
     failures: list[tuple[Path, str]] = []
+    workers = max(1, args.workers)
 
-    for index, clip_dir in enumerate(clip_dirs, start=1):
-        print(f"[{index}/{len(clip_dirs)}] Processing {clip_dir.name}...")
-        try:
-            hz = _infer_hz_from_occ_dir(clip_dir / "occ")
-            print(f"Inferred HZ: {hz:.3f}")
-            run_pipeline(
-                clip_dir,
-                hz,
-                regenerate_occ_png=not args.reuse_occ_png,
-            )
-        except Exception as exc:
-            failures.append((clip_dir, str(exc)))
-            print(f"Failed: {clip_dir.name}: {exc}")
-            if args.fail_fast:
-                raise
+    if workers == 1:
+        for index, clip_dir in enumerate(clip_dirs, start=1):
+            print(f"[{index}/{len(clip_dirs)}] Processing {clip_dir.name}...")
+            try:
+                _, hz = _process_clip(data_dir, clip_dir, args.reuse_occ_png)
+                print(f"Inferred HZ: {hz:.3f}")
+            except Exception as exc:
+                failures.append((clip_dir, str(exc)))
+                print(f"Failed: {clip_dir.name}: {exc}")
+                if args.fail_fast:
+                    raise
+    else:
+        print(f"Running with {workers} workers...")
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_map = {
+                executor.submit(_process_clip, data_dir, clip_dir, args.reuse_occ_png): clip_dir
+                for clip_dir in clip_dirs
+            }
+            completed = 0
+            for future in as_completed(future_map):
+                clip_dir = future_map[future]
+                completed += 1
+                try:
+                    _, hz = future.result()
+                    print(f"[{completed}/{len(clip_dirs)}] Done {clip_dir.name} (HZ={hz:.3f})")
+                except Exception as exc:
+                    failures.append((clip_dir, str(exc)))
+                    print(f"[{completed}/{len(clip_dirs)}] Failed {clip_dir.name}: {exc}")
+                    if args.fail_fast:
+                        for pending in future_map:
+                            pending.cancel()
+                        raise
 
     if failures:
         print("\nCompleted with failures:")

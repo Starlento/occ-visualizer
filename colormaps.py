@@ -44,21 +44,25 @@ def get_nuscenes_colormap():
 
 
 def get_xc_cn_colormap():
+    # 13 perceptually distinct colors, one per class:
+    # 0:free  1:vehicle  2:pedestrian  3:other_stable_obstacle
+    # 4:other_dynamic_obstacle  5:wall_door  6:pillar  7:curb
+    # 8:stopper_locker  9:higher_roadway  10:unknown  11:freespace  12:ghost_obstacle
     return np.array(
         [
-            [0, 0, 0, 255],
-            [255, 120, 50, 255],
-            [255, 192, 203, 255],
-            [255, 255, 0, 255],
-            [0, 150, 245, 255],
-            [0, 255, 255, 255],
-            [255, 127, 0, 255],
-            [255, 0, 0, 255],
-            [255, 240, 150, 255],
-            [135, 60, 0, 255],
-            [160, 32, 240, 255],
-            [0, 175, 0, 255],
-            [230, 230, 250, 255],
+            [0,   0,   0,   255],  # 0  free             — black
+            [220,  20,  20,  255],  # 1  vehicle          — vivid red
+            [255, 220,   0,  255],  # 2  pedestrian       — vivid yellow
+            [30,  100, 220,  255],  # 3  other_stable_obs — medium blue
+            [0,   210,  70,  255],  # 4  other_dynamic_obs— bright green
+            [255, 140,   0,  255],  # 5  wall_door        — vivid orange
+            [210,   0, 200,  255],  # 6  pillar           — magenta
+            [0,   210, 220,  255],  # 7  curb             — cyan
+            [120,   0, 220,  255],  # 8  stopper_locker   — deep purple
+            [180,  90,   0,  255],  # 9  higher_roadway   — brown
+            [255, 160, 120,  255],  # 10 unknown          — coral
+            [110, 110, 110,  255],  # 11 freespace        — dark gray
+            [255, 160, 120,  255],  # 12 ghost_obstacle   — coral
         ],
         dtype=np.uint8,
     )
