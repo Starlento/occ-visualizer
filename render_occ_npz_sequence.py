@@ -4,6 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
+from data_layout import FLAT_FRAME_FILENAMES, list_complete_timestamp_frame_dirs
 from occupancy_visualizer import save_occ
 from merge_image_sequence import merge_image_sequence
 
@@ -12,7 +13,6 @@ DEFAULT_INPUT_DIR = (
     Path(__file__).resolve().parent
     / "data"
     / "4af3e12ea8ace222e59743f5c1370a12"
-    / "occ"
 )
 
 
@@ -23,13 +23,13 @@ def _parse_args():
         nargs="?",
         type=Path,
         default=DEFAULT_INPUT_DIR,
-        help="Directory containing per-frame occupancy NPZ files.",
+        help="Clip directory containing complete per-timestamp frame folders.",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
         default=None,
-        help="Directory to write PNG frames into. Defaults to <input_dir>/../occ_png.",
+        help="Directory to write PNG frames into. Defaults to <clip_dir>/occ_png.",
     )
     parser.add_argument(
         "--dataset",
@@ -90,6 +90,22 @@ def _load_occupancy(npz_path, occupancy_key, transpose_zxy_to_xyz):
     return occupancy
 
 
+def _collect_occ_npz_files(input_dir: Path) -> tuple[list[Path], Path]:
+    input_dir = Path(input_dir)
+    flat_npz_files = [
+        frame_dir / FLAT_FRAME_FILENAMES["occ"]
+        for frame_dir in list_complete_timestamp_frame_dirs(input_dir)
+        if (frame_dir / FLAT_FRAME_FILENAMES["occ"]).is_file()
+    ]
+    if flat_npz_files:
+        return flat_npz_files, input_dir
+
+    raise FileNotFoundError(
+        "No complete timestamp frames with occ.npz were found in "
+        f"{input_dir}. Expected <clip>/<timestamp>/occ.npz inside 10-file frame folders."
+    )
+
+
 def render_occ_npz_sequence(
     input_dir,
     output_dir=None,
@@ -103,16 +119,14 @@ def render_occ_npz_sequence(
 ):
     input_dir = Path(input_dir)
     if not input_dir.exists() or not input_dir.is_dir():
-        raise NotADirectoryError(f"Occupancy directory does not exist: {input_dir}")
+        raise NotADirectoryError(f"Input directory does not exist: {input_dir}")
 
-    npz_files = sorted(input_dir.glob("*.npz"))
-    if not npz_files:
-        raise FileNotFoundError(f"No NPZ files found in {input_dir}")
+    npz_files, output_root = _collect_occ_npz_files(input_dir)
 
     if limit is not None:
         npz_files = npz_files[:limit]
 
-    output_dir = Path(output_dir) if output_dir is not None else input_dir.parent / "occ_png"
+    output_dir = Path(output_dir) if output_dir is not None else output_root / "occ_png"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     total = len(npz_files)
@@ -125,7 +139,7 @@ def render_occ_npz_sequence(
         save_occ(
             save_dir=str(output_dir),
             occupancy=occupancy,
-            name=npz_path.stem,
+            name=npz_path.parent.name,
             sem=True,
             dataset=dataset,
             empty_label=empty_label,

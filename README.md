@@ -150,6 +150,26 @@ Example with explicit output path:
 python .\merge_png_sequence.py .\outputs 10 --output .\outputs\moving_car.mp4
 ```
 
+## Data Layout
+
+Each clip directory must use the flat per-timestamp layout. Every timestamp folder is expected to contain exactly 10 files: `occ.npz`, `freespace.png`, `freespace_height.npy`, `freespace_kpts.npy`, 5 camera JPEGs, and 1 frame JSON file.
+
+Example layout:
+
+```text
+data/<clip>/
+    20231125105257.100000/
+        occ.npz
+        freespace.png
+        freespace_height.npy
+        freespace_kpts.npy
+        20231125105257.164375_FrontCam02.jpeg
+        20231125105257.156691_SurCam02.jpeg
+        11143C_20231125105257.100000.json
+```
+
+`render_occ_npz_sequence.py` and `pipeline.py` expect this layout only.
+
 ## Notes
 
 - `save_occ` is designed for single-frame rendering. If you want a sequence, call it once per frame.

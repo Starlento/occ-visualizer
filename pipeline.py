@@ -11,28 +11,22 @@ Example:
 
 import argparse
 from bisect import bisect_left
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import imageio.v2 as imageio
 from PIL import Image
 
+from data_layout import parse_timestamp_from_prefixed_stem, parse_timestamp_from_stem
 from render_occ_npz_sequence import render_occ_npz_sequence
 from extract_from_view_image import extract_front_cam
-
-
-def _parse_occ_timestamp(path: Path) -> float:
-    return float(path.stem)
-
-
-def _parse_front_cam_timestamp(path: Path) -> float:
-    return float(path.stem.split("_", 1)[0])
 
 
 def _get_occ_png_files(occ_png_dir: Path) -> list[Path]:
     png_files = sorted(
         (path for path in occ_png_dir.glob("*.png") if path.is_file()),
-        key=_parse_occ_timestamp,
+        key=parse_timestamp_from_stem,
     )
     if not png_files:
         raise FileNotFoundError(f"No PNG files found in {occ_png_dir}")
@@ -42,14 +36,14 @@ def _get_occ_png_files(occ_png_dir: Path) -> list[Path]:
 def _get_front_cam_files(front_cam_dir: Path) -> list[Path]:
     image_files = sorted(
         (path for path in front_cam_dir.glob("*_FrontCam02.jpeg") if path.is_file()),
-        key=_parse_front_cam_timestamp,
+        key=parse_timestamp_from_prefixed_stem,
     )
     if not image_files:
         raise FileNotFoundError(f"No FrontCam02 images found in {front_cam_dir}")
     return image_files
 
 
-def _find_nearest_front_cam(occ_timestamp: float, front_timestamps: list[float], front_files: list[Path]) -> Path:
+def _find_nearest_front_cam(occ_timestamp: datetime, front_timestamps: list[datetime], front_files: list[Path]) -> Path:
     index = bisect_left(front_timestamps, occ_timestamp)
     if index <= 0:
         return front_files[0]
@@ -75,13 +69,13 @@ def _concat_images_horizontal(left_frame: np.ndarray, right_frame: np.ndarray) -
 def _generate_merged_video_from_images(front_cam_dir: Path, occ_png_dir: Path, hz: float, output_path: Path) -> None:
     occ_png_files = _get_occ_png_files(occ_png_dir)
     front_cam_files = _get_front_cam_files(front_cam_dir)
-    front_timestamps = [_parse_front_cam_timestamp(path) for path in front_cam_files]
+    front_timestamps = [parse_timestamp_from_prefixed_stem(path) for path in front_cam_files]
 
     writer = imageio.get_writer(str(output_path), fps=hz)
     try:
         total = len(occ_png_files)
         for index, occ_png_path in enumerate(occ_png_files, start=1):
-            occ_timestamp = _parse_occ_timestamp(occ_png_path)
+            occ_timestamp = parse_timestamp_from_stem(occ_png_path)
             front_cam_path = _find_nearest_front_cam(occ_timestamp, front_timestamps, front_cam_files)
 
             front_frame = imageio.imread(front_cam_path)
@@ -100,16 +94,14 @@ def run_pipeline(data_dir: Path, hz: float, regenerate_occ_png: bool = True) -> 
     if not data_dir.is_dir():
         raise NotADirectoryError(f"Directory not found: {data_dir}")
 
-    occ_dir = data_dir / "occ"
     occ_png_dir = data_dir / "occ_png"
     front_cam_dir = data_dir / "front_cam"
     merged_video = data_dir / "merged.mp4"
-    legacy_sequence_video = data_dir / "sequence.mp4"
 
     # 1. Render occ NPZ -> PNG frames
     if regenerate_occ_png:
         print("==> Rendering occ PNGs...")
-        render_occ_npz_sequence(input_dir=occ_dir, output_dir=occ_png_dir, hz=hz, merge_video=False)
+        render_occ_npz_sequence(input_dir=data_dir, output_dir=occ_png_dir, hz=hz, merge_video=False)
     else:
         if not occ_png_dir.is_dir():
             raise FileNotFoundError(f"occ_png directory not found: {occ_png_dir}")
@@ -124,10 +116,6 @@ def run_pipeline(data_dir: Path, hz: float, regenerate_occ_png: bool = True) -> 
     # 3. Merge images using nearest timestamp alignment
     print("==> Generating merged video from aligned images...")
     _generate_merged_video_from_images(front_cam_dir, occ_png_dir, hz, merged_video)
-
-    # 4. Remove legacy outputs if present
-    if legacy_sequence_video.exists():
-        legacy_sequence_video.unlink()
 
     print(f"Done. Saved merged video to {merged_video}")
 
