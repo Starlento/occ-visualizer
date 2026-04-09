@@ -64,7 +64,8 @@ python .\examples\example_single_occ_interactive.py
 ```
 
 Set `SHOW_WINDOW = False` in the script when you only want a debug PNG without opening the Mayavi window.
-Set `CAMERA_NAME` in the script to switch the debug view to a different fixed directional preset, and tune `CAMERA_CENTER_Z_CELL_OFFSET` if you want to move the camera higher or lower.
+Set `CAMERA_NAME` in the script to switch the debug view to a different fixed per-camera preset.
+If you need to tune viewpoint, edit the preset config in `utils.py` instead of overriding values in the script.
 
 ## Build the Merged Video
 
@@ -74,7 +75,7 @@ Generate `merged.mp4` from a camera image and `occ_vis.png` in each timestamp fo
 python .\pipeline.py .\data\4af3e12ea8ace222e59743f5c1370a12 10 --camera-name FrontCam02
 ```
 
-`--camera-name` now controls both the left image selection and the occ render viewpoint. The right-side render uses a fixed lookup preset: `SurCam01` left, `SurCam02` front, `SurCam03` right, `SurCam04` back, and `FrontCam02` front.
+`--camera-name` now controls both the left image selection and the occ render viewpoint. The right-side render uses a fixed per-camera preset template: `SurCam01` left, `SurCam02` front, `SurCam03` right, `SurCam04` back, and `FrontCam02` front.
 
 Reuse existing `occ_vis.png` files instead of re-rendering them:
 
@@ -98,6 +99,6 @@ merge_image_sequence(Path("outputs"), 10, Path("outputs/moving_car.mp4"))
 
 - `save_occ` is designed for single-frame rendering. If you want a sequence, call it once per frame.
 - `render_occ_npz_sequence.py` writes `occ_vis.png` into each timestamp folder by default.
-- Semantic rendering should pass `empty_label`, otherwise empty voxels may be rendered as a valid class.
-- When `camera_name` is provided, the render viewpoint is derived from a fixed per-camera lookup preset centered in the volume and lifted by 5 z-cells by default.
+- Semantic rendering reads `empty_labels` from the selected dataset config in `occupancy_visualizer.py`.
+- When `camera_name` is provided, the render viewpoint is derived from a fixed per-camera preset template. For `xc-cn`, the preset is anchored at the dataset origin index and then shifted by per-camera position and target offsets.
 - If you want an interactive Mayavi window, call `save_occ(..., show=True)`.
