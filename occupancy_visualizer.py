@@ -253,9 +253,6 @@ def _to_plot_space_vector(vector):
 
 
 def _apply_explicit_camera_preset(scene, voxel_shape, dataset_config, camera_preset):
-    mins, maxs = _get_scene_bounds(voxel_shape, dataset_config)
-    corners = _to_plot_space(_get_bounds_corners(mins, maxs))
-
     position = np.array(camera_preset["position"], dtype=np.float32)
     focal_point = np.array(camera_preset["focal_point"], dtype=np.float32)
     forward = _normalize_vector(focal_point - position)
@@ -263,24 +260,18 @@ def _apply_explicit_camera_preset(scene, voxel_shape, dataset_config, camera_pre
     right = _normalize_vector(np.cross(forward, view_up))
     view_up = _normalize_vector(np.cross(right, forward))
 
-    projected_depth = (corners - position) @ forward
-    visible_depth = projected_depth[projected_depth > 0.1]
-    if visible_depth.size:
-        near_clip = max(float(visible_depth.min()) * 0.5, 0.1)
-        far_clip = max(float(visible_depth.max()) * 1.25, near_clip + 1.0)
-    else:
-        scene_radius = np.linalg.norm(corners - position, axis=1)
-        near_clip = 0.1
-        far_clip = max(float(scene_radius.max()) * 1.25, 100.0)
-
     scene.camera.position = position.tolist()
     scene.camera.focal_point = focal_point.tolist()
     scene.camera.view_angle = float(camera_preset.get("view_angle", _CAMERA_PRESET["view_angle"]))
     scene.camera.view_up = view_up.tolist()
-    scene.camera.clipping_range = [near_clip, far_clip]
+    if "clipping_range" in camera_preset:
+        scene.camera.clipping_range = list(camera_preset["clipping_range"])
     scene.camera.compute_view_plane_normal()
     scene.camera.orthogonalize_view_up()
     scene.render()
+    if "clipping_range" not in camera_preset:
+        scene.renderer.reset_camera_clipping_range()
+        scene.render()
 
 
 def _apply_camera_path(scene, voxel_shape, dataset_config, figure_size, camera_preset=None):
