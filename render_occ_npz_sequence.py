@@ -4,9 +4,8 @@ from pathlib import Path
 
 import numpy as np
 
-from data_layout import FLAT_FRAME_FILENAMES, list_complete_timestamp_frame_dirs
+from utils import FLAT_FRAME_FILENAMES, get_clip_camera_render_settings, list_complete_timestamp_frame_dirs, merge_image_sequence
 from occupancy_visualizer import save_occ
-from merge_image_sequence import merge_image_sequence
 
 
 DEFAULT_INPUT_DIR = (
@@ -26,10 +25,14 @@ def _parse_args():
         help="Clip directory containing complete per-timestamp frame folders.",
     )
     parser.add_argument(
-        "--output-dir",
-        type=Path,
+        "--output-name",
+        default="occ_vis",
+        help="PNG base name written into each timestamp folder. Defaults to occ_vis.",
+    )
+    parser.add_argument(
+        "--camera-name",
         default=None,
-        help="Directory to write PNG frames into. Defaults to <clip_dir>/occ_png.",
+        help="Optional camera name whose fixed lookup preset is used to align the occ render viewpoint.",
     )
     parser.add_argument(
         "--dataset",
@@ -108,7 +111,8 @@ def _collect_occ_npz_files(input_dir: Path) -> tuple[list[Path], Path]:
 
 def render_occ_npz_sequence(
     input_dir,
-    output_dir=None,
+    output_name="occ_vis",
+    camera_name=None,
     dataset="xc-cn",
     empty_label=0,
     occupancy_key="occ_voxel",
@@ -126,40 +130,54 @@ def render_occ_npz_sequence(
     if limit is not None:
         npz_files = npz_files[:limit]
 
-    output_dir = Path(output_dir) if output_dir is not None else output_root / "occ_png"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    camera_preset = None
+    figure_size = None
+    if camera_name is not None:
+        camera_preset, figure_size = get_clip_camera_render_settings(
+            output_root,
+            camera_name=camera_name,
+            dataset=dataset,
+            occupancy_key=occupancy_key,
+            transpose_zxy_to_xyz=transpose_zxy_to_xyz,
+        )
 
     total = len(npz_files)
+    image_paths: list[Path] = []
     for index, npz_path in enumerate(npz_files, start=1):
         occupancy = _load_occupancy(
             npz_path,
             occupancy_key=occupancy_key,
             transpose_zxy_to_xyz=transpose_zxy_to_xyz,
         )
+        frame_dir = npz_path.parent
         save_occ(
-            save_dir=str(output_dir),
+            save_dir=str(frame_dir),
             occupancy=occupancy,
-            name=npz_path.parent.name,
+            name=output_name,
             sem=True,
             dataset=dataset,
             empty_label=empty_label,
+            camera_preset=camera_preset,
+            figure_size=figure_size,
         )
+        image_paths.append(frame_dir / f"{output_name}.png")
         _print_progress(index, total)
 
-    print(f"Generated {total} PNG frames in {output_dir.resolve()}")
+    print(f"Generated {total} {output_name}.png files under {output_root.resolve()}")
 
     if merge_video:
-        mp4_path = output_dir.parent / "sequence.mp4"
-        merge_image_sequence(output_dir, hz, mp4_path)
+        mp4_path = output_root / "sequence.mp4"
+        merge_image_sequence(image_paths, hz, mp4_path)
 
-    return output_dir
+    return image_paths
 
 
 def main():
     args = _parse_args()
     render_occ_npz_sequence(
         input_dir=args.input_dir,
-        output_dir=args.output_dir,
+        output_name=args.output_name,
+        camera_name=args.camera_name,
         dataset=args.dataset,
         empty_label=args.empty_label,
         occupancy_key=args.occupancy_key,

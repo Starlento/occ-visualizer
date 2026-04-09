@@ -1,158 +1,28 @@
 # Occupancy Visualization Utilities
 
-This repository contains a small set of tools for rendering occupancy grids as PNG images with Mayavi and stitching rendered PNG sequences into an MP4 video.
+This repository renders occupancy grids with Mayavi and builds comparison videos from timestamp-aligned frame folders.
 
-The repo currently includes:
+## Main Files
 
-- `occupancy_visualizer.py`: renders a single occupancy grid to a PNG.
+- `occupancy_visualizer.py`: low-level single-frame Mayavi renderer.
+- `render_occ_npz_sequence.py`: renders `occ.npz` into `occ_vis.png` inside each timestamp folder.
+- `pipeline.py`: builds a merged video from a chosen camera image and `occ_vis.png` in each timestamp folder.
+- `utils.py`: timestamp-frame helpers and PNG-to-MP4 utilities.
 - `colormaps.py`: dataset-specific semantic colormaps.
-- `examples/example_moving_occ_sequence.py`: generates a simple synthetic scene sequence with a moving car.
-- `examples/example_single_occ_interactive.py`: renders one frame and opens an interactive Mayavi window.
-- `merge_png_sequence.py`: converts a folder of PNG frames into an MP4.
+- `examples/example_single_occ_interactive.py`: interactive single-frame occ debug entry point.
 
 ## Requirements
 
 - Python `3.12`
 - A working Mayavi installation for occupancy rendering
+- `PyQt5` on Windows for interactive Mayavi windows
 - `imageio` and `imageio-ffmpeg` for MP4 export
 
 This workspace already uses a local virtual environment at `.venv`.
 
-## Environment Setup
-
-If you need to recreate the environment:
-
-```powershell
-uv venv --python 3.12 .venv
-```
-
-Activate the virtual environment:
-
-```powershell
-.\.venv\Scripts\Activate.ps1
-```
-
-On macOS or Linux:
-
-```bash
-source .venv/bin/activate
-```
-
-Sync the dependencies declared in `pyproject.toml`:
-
-```powershell
-uv sync
-```
-
-This installs:
-
-- `numpy` for occupancy grid creation and processing
-- `imageio` and `imageio-ffmpeg` for MP4 export
-- `vtk` and `mayavi` for occupancy rendering
-- `pyvirtualdisplay` on non-Windows platforms for headless rendering support
-
-If you prefer `pip`, note that a `uv venv` environment may not include `pip` initially. Bootstrap it first:
-
-```powershell
-python -m ensurepip --upgrade
-python -m pip install numpy imageio imageio-ffmpeg vtk==9.3.1 mayavi==4.8.3
-```
-
-## Render a Single Occupancy Grid
-
-The main API is `save_occ` in `occupancy_visualizer.py`.
-
-Expected input:
-
-- `occupancy`: a `numpy.ndarray` or tensor-like object containing a single occupancy grid
-- shape: typically `(X, Y, Z)` or `(1, X, Y, Z)`
-- semantic mode: set `sem=True` when grid values are semantic class ids
-
-Example:
-
-```python
-import numpy as np
-
-from occupancy_visualizer import save_occ
-
-grid = np.zeros((200, 200, 16), dtype=np.uint8)
-grid[:, :, 0] = 11
-
-save_occ(
-    save_dir="outputs",
-    occupancy=grid,
-    name="frame_000",
-    sem=True,
-    dataset="nusc",
-    empty_label=0,
-)
-```
-
-## Generate the Example Sequence
-
-The example script creates a simple synthetic scene:
-
-- a flat ground plane
-- one static pillar
-- one car moving forward along the `+x` direction
-- `10 Hz` for `5 seconds`
-- total: `50` PNG frames
-
-Run:
-
-```powershell
-python .\examples\example_moving_occ_sequence.py
-```
-
-By default, the script writes frames into:
-
-```text
-outputs/
-```
-
-The script shows a terminal progress bar while rendering.
-
-## Interactive Single-Frame Example
-
-Use this example when you want to inspect one occupancy frame interactively in a Mayavi window.
-
-Run:
-
-```powershell
-python .\examples\example_single_occ_interactive.py
-```
-
-This example:
-
-- builds the first frame from the synthetic scene
-- saves `outputs/interactive_frame_000.png`
-- opens an interactive Mayavi view via `save_occ(..., show=True)`
-
-## Merge PNG Frames into MP4
-
-Use `merge_png_sequence.py` to encode all `.png` files in a folder into an MP4.
-
-Arguments:
-
-- `png_dir`: path to the folder containing PNG files
-- `hz`: output video frame rate
-- `--output`: optional output MP4 path
-
-Example:
-
-```powershell
-python .\merge_png_sequence.py .\outputs 10
-```
-
-Example with explicit output path:
-
-```powershell
-python .\merge_png_sequence.py .\outputs 10 --output .\outputs\moving_car.mp4
-```
-
 ## Data Layout
 
-Each clip directory must use the flat per-timestamp layout. Every timestamp folder is expected to contain exactly 10 files: `occ.npz`, `freespace.png`, `freespace_height.npy`, `freespace_kpts.npy`, 5 camera JPEGs, and 1 frame JSON file.
+Each clip directory must use the flat per-timestamp layout. Every timestamp folder must contain the 10 source files: `occ.npz`, `freespace.png`, `freespace_height.npy`, `freespace_kpts.npy`, 5 camera JPEGs, and 1 frame JSON file. Generated intermediates such as `occ_vis.png` can live in the same folder.
 
 Example layout:
 
@@ -166,21 +36,68 @@ data/<clip>/
         20231125105257.164375_FrontCam02.jpeg
         20231125105257.156691_SurCam02.jpeg
         11143C_20231125105257.100000.json
+        occ_vis.png
 ```
 
 `render_occ_npz_sequence.py` and `pipeline.py` expect this layout only.
 
+## Render Per-Frame Occ Visualization
+
+Render `occ_vis.png` into each timestamp folder:
+
+```powershell
+python .\render_occ_npz_sequence.py .\data\4af3e12ea8ace222e59743f5c1370a12
+```
+
+To use a different output base name:
+
+```powershell
+python .\render_occ_npz_sequence.py .\data\4af3e12ea8ace222e59743f5c1370a12 --output-name custom_occ_vis
+```
+
+## Interactive Debug Render
+
+`examples/example_single_occ_interactive.py` is a hard-coded single-frame debug script. Edit the constants at the top of the file, then run it to open one timestamp frame in an interactive Mayavi window.
+
+```powershell
+python .\examples\example_single_occ_interactive.py
+```
+
+Set `SHOW_WINDOW = False` in the script when you only want a debug PNG without opening the Mayavi window.
+Set `CAMERA_NAME` in the script to switch the debug view to a different fixed directional preset, and tune `CAMERA_CENTER_Z_CELL_OFFSET` if you want to move the camera higher or lower.
+
+## Build the Merged Video
+
+Generate `merged.mp4` from a camera image and `occ_vis.png` in each timestamp folder:
+
+```powershell
+python .\pipeline.py .\data\4af3e12ea8ace222e59743f5c1370a12 10 --camera-name FrontCam02
+```
+
+`--camera-name` now controls both the left image selection and the occ render viewpoint. The right-side render uses a fixed lookup preset: `SurCam01` left, `SurCam02` front, `SurCam03` right, `SurCam04` back, and `FrontCam02` front.
+
+Reuse existing `occ_vis.png` files instead of re-rendering them:
+
+```powershell
+python .\pipeline.py .\data\4af3e12ea8ace222e59743f5c1370a12 10 --reuse-occ-vis
+```
+
+## Merge PNG Frames into MP4
+
+Use `merge_image_sequence` from `utils.py` to encode `.png` frames into an MP4.
+
+```python
+from pathlib import Path
+
+from utils import merge_image_sequence
+
+merge_image_sequence(Path("outputs"), 10, Path("outputs/moving_car.mp4"))
+```
+
 ## Notes
 
 - `save_occ` is designed for single-frame rendering. If you want a sequence, call it once per frame.
+- `render_occ_npz_sequence.py` writes `occ_vis.png` into each timestamp folder by default.
 - Semantic rendering should pass `empty_label`, otherwise empty voxels may be rendered as a valid class.
-- The current camera is a fixed oblique top-down view defined in `occupancy_visualizer.py`.
+- When `camera_name` is provided, the render viewpoint is derived from a fixed per-camera lookup preset centered in the volume and lifted by 5 z-cells by default.
 - If you want an interactive Mayavi window, call `save_occ(..., show=True)`.
-
-## Current Workflow
-
-The typical workflow in this repo is:
-
-1. Generate or load occupancy grids.
-2. Render them to PNG with `save_occ`.
-3. Merge the PNG folder into MP4 with `merge_png_sequence.py`.

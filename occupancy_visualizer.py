@@ -60,6 +60,14 @@ _FIGURE_MAX_SIDE = 2200
 _CAMERA_FRAME_MARGIN = 1.02
 
 
+def _normalize_vector(vector):
+    vector = np.asarray(vector, dtype=np.float32)
+    norm = float(np.linalg.norm(vector))
+    if norm == 0.0:
+        raise ValueError("Cannot normalize a zero-length camera vector")
+    return vector / norm
+
+
 def _start_virtual_display():
     global _OFFSCREEN
 
@@ -81,7 +89,10 @@ def _get_mlab(show=False):
     if show and os.environ.get("MAYAVI_OFFSCREEN", "").lower() in {"1", "true", "yes"}:
         raise RuntimeError("Interactive rendering requested, but MAYAVI_OFFSCREEN forces offscreen mode.")
 
-    if not show:
+    if show:
+        os.environ.setdefault("ETS_TOOLKIT", "qt")
+        os.environ.setdefault("QT_API", "pyqt5")
+    else:
         os.environ.setdefault("ETS_TOOLKIT", "null")
 
     try:
@@ -235,7 +246,48 @@ def _to_plot_space(coords):
     return plot_coords
 
 
-def _apply_camera_path(scene, voxel_shape, dataset_config, figure_size):
+def _to_plot_space_vector(vector):
+    plot_vector = np.array(vector, dtype=np.float32, copy=True)
+    plot_vector[1] *= -1.0
+    return plot_vector
+
+
+def _apply_explicit_camera_preset(scene, voxel_shape, dataset_config, camera_preset):
+    mins, maxs = _get_scene_bounds(voxel_shape, dataset_config)
+    corners = _to_plot_space(_get_bounds_corners(mins, maxs))
+
+    position = np.array(camera_preset["position"], dtype=np.float32)
+    focal_point = np.array(camera_preset["focal_point"], dtype=np.float32)
+    forward = _normalize_vector(focal_point - position)
+    view_up = _normalize_vector(np.array(camera_preset["view_up"], dtype=np.float32))
+    right = _normalize_vector(np.cross(forward, view_up))
+    view_up = _normalize_vector(np.cross(right, forward))
+
+    projected_depth = (corners - position) @ forward
+    visible_depth = projected_depth[projected_depth > 0.1]
+    if visible_depth.size:
+        near_clip = max(float(visible_depth.min()) * 0.5, 0.1)
+        far_clip = max(float(visible_depth.max()) * 1.25, near_clip + 1.0)
+    else:
+        scene_radius = np.linalg.norm(corners - position, axis=1)
+        near_clip = 0.1
+        far_clip = max(float(scene_radius.max()) * 1.25, 100.0)
+
+    scene.camera.position = position.tolist()
+    scene.camera.focal_point = focal_point.tolist()
+    scene.camera.view_angle = float(camera_preset.get("view_angle", _CAMERA_PRESET["view_angle"]))
+    scene.camera.view_up = view_up.tolist()
+    scene.camera.clipping_range = [near_clip, far_clip]
+    scene.camera.compute_view_plane_normal()
+    scene.camera.orthogonalize_view_up()
+    scene.render()
+
+
+def _apply_camera_path(scene, voxel_shape, dataset_config, figure_size, camera_preset=None):
+    if camera_preset is not None:
+        _apply_explicit_camera_preset(scene, voxel_shape, dataset_config, camera_preset)
+        return
+
     mins, maxs = _get_scene_bounds(voxel_shape, dataset_config)
     corners = _to_plot_space(_get_bounds_corners(mins, maxs))
     center = (corners.min(axis=0) + corners.max(axis=0)) / 2.0
@@ -281,7 +333,18 @@ def _apply_camera_path(scene, voxel_shape, dataset_config, figure_size):
     scene.render()
 
 
-def save_occ(save_dir, occupancy, name, sem=False, cap=2, dataset="nusc", show=False, empty_label=None):
+def save_occ(
+    save_dir,
+    occupancy,
+    name,
+    sem=False,
+    cap=2,
+    dataset="nusc",
+    show=False,
+    empty_label=None,
+    camera_preset=None,
+    figure_size=None,
+):
     """Render an occupancy volume to a PNG using Mayavi."""
 
     dataset_config = _get_dataset_config(dataset)
@@ -297,7 +360,7 @@ def save_occ(save_dir, occupancy, name, sem=False, cap=2, dataset="nusc", show=F
     mlab = _get_mlab(show=show)
     previous_offscreen = mlab.options.offscreen
     mlab.options.offscreen = _should_render_offscreen(show)
-    figure_size = _get_figure_size(voxels.shape, dataset_config)
+    figure_size = figure_size if figure_size is not None else _get_figure_size(voxels.shape, dataset_config)
     figure = _create_figure(mlab, show=show, figure_size=figure_size)
     points_kwargs = _build_points_kwargs(dataset_config, sem=sem)
 
@@ -314,7 +377,7 @@ def save_occ(save_dir, occupancy, name, sem=False, cap=2, dataset="nusc", show=F
         _apply_semantic_lut(plot, dataset_config)
 
     scene = figure.scene
-    _apply_camera_path(scene, voxels.shape, dataset_config, figure_size)
+    _apply_camera_path(scene, voxels.shape, dataset_config, figure_size, camera_preset=camera_preset)
 
     os.makedirs(save_dir, exist_ok=True)
     output_path = os.path.join(save_dir, f"{name}.png")

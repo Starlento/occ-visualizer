@@ -1,60 +1,41 @@
 """
-Full pipeline: render occ PNGs, extract front cam images, generate both videos,
-horizontally concatenate them, and clean up the individual videos.
+Full pipeline: render per-frame occ visualizations inside timestamp folders and
+generate a merged comparison video.
 
 Usage:
     python pipeline.py <dir> <hz>
 
 Example:
-    python pipeline.py ./data/4af3e12ea8ace222e59743f5c1370a12 10
+    python pipeline.py ./data/4af3e12ea8ace222e59743f5c1370a12 10 --camera-name SurCam01
 """
 
 import argparse
-from bisect import bisect_left
-from datetime import datetime
 from pathlib import Path
 
-import numpy as np
 import imageio.v2 as imageio
+import numpy as np
 from PIL import Image
 
-from data_layout import parse_timestamp_from_prefixed_stem, parse_timestamp_from_stem
 from render_occ_npz_sequence import render_occ_npz_sequence
-from extract_from_view_image import extract_front_cam
+from utils import get_camera_image_path, list_complete_timestamp_frame_dirs
 
 
-def _get_occ_png_files(occ_png_dir: Path) -> list[Path]:
-    png_files = sorted(
-        (path for path in occ_png_dir.glob("*.png") if path.is_file()),
-        key=parse_timestamp_from_stem,
-    )
-    if not png_files:
-        raise FileNotFoundError(f"No PNG files found in {occ_png_dir}")
-    return png_files
+DEFAULT_OCC_VIS_FILENAME = "occ_vis.png"
+DEFAULT_CAMERA_NAME = "FrontCam02"
 
 
-def _get_front_cam_files(front_cam_dir: Path) -> list[Path]:
-    image_files = sorted(
-        (path for path in front_cam_dir.glob("*_FrontCam02.jpeg") if path.is_file()),
-        key=parse_timestamp_from_prefixed_stem,
-    )
-    if not image_files:
-        raise FileNotFoundError(f"No FrontCam02 images found in {front_cam_dir}")
-    return image_files
+def _get_frame_dirs(data_dir: Path) -> list[Path]:
+    frame_dirs = list_complete_timestamp_frame_dirs(data_dir)
+    if not frame_dirs:
+        raise FileNotFoundError(f"No complete timestamp frame directories found in {data_dir}")
+    return frame_dirs
 
 
-def _find_nearest_front_cam(occ_timestamp: datetime, front_timestamps: list[datetime], front_files: list[Path]) -> Path:
-    index = bisect_left(front_timestamps, occ_timestamp)
-    if index <= 0:
-        return front_files[0]
-    if index >= len(front_files):
-        return front_files[-1]
-
-    prev_timestamp = front_timestamps[index - 1]
-    next_timestamp = front_timestamps[index]
-    if abs(prev_timestamp - occ_timestamp) <= abs(next_timestamp - occ_timestamp):
-        return front_files[index - 1]
-    return front_files[index]
+def _get_occ_vis_path(frame_dir: Path, occ_vis_filename: str) -> Path:
+    occ_vis_path = frame_dir / occ_vis_filename
+    if not occ_vis_path.is_file():
+        raise FileNotFoundError(f"Missing {occ_vis_filename} in {frame_dir}")
+    return occ_vis_path
 
 
 def _concat_images_horizontal(left_frame: np.ndarray, right_frame: np.ndarray) -> np.ndarray:
@@ -66,21 +47,19 @@ def _concat_images_horizontal(left_frame: np.ndarray, right_frame: np.ndarray) -
     return np.concatenate([left_frame, right_frame], axis=1)
 
 
-def _generate_merged_video_from_images(front_cam_dir: Path, occ_png_dir: Path, hz: float, output_path: Path) -> None:
-    occ_png_files = _get_occ_png_files(occ_png_dir)
-    front_cam_files = _get_front_cam_files(front_cam_dir)
-    front_timestamps = [parse_timestamp_from_prefixed_stem(path) for path in front_cam_files]
-
+def _generate_merged_video_from_frames(
+    frame_dirs: list[Path],
+    hz: float,
+    output_path: Path,
+    camera_name: str,
+    occ_vis_filename: str,
+) -> None:
     writer = imageio.get_writer(str(output_path), fps=hz)
     try:
-        total = len(occ_png_files)
-        for index, occ_png_path in enumerate(occ_png_files, start=1):
-            occ_timestamp = parse_timestamp_from_stem(occ_png_path)
-            front_cam_path = _find_nearest_front_cam(occ_timestamp, front_timestamps, front_cam_files)
-
-            front_frame = imageio.imread(front_cam_path)
-            occ_frame = imageio.imread(occ_png_path)
-            occ_frame = np.fliplr(occ_frame)
+        total = len(frame_dirs)
+        for index, frame_dir in enumerate(frame_dirs, start=1):
+            front_frame = imageio.imread(get_camera_image_path(frame_dir, camera_name=camera_name))
+            occ_frame = imageio.imread(_get_occ_vis_path(frame_dir, occ_vis_filename))
             merged_frame = _concat_images_horizontal(front_frame, occ_frame)
             writer.append_data(merged_frame)
             print(f"\rMerging frames: {index}/{total}", end="", flush=True)
@@ -89,33 +68,46 @@ def _generate_merged_video_from_images(front_cam_dir: Path, occ_png_dir: Path, h
     print()
 
 
-def run_pipeline(data_dir: Path, hz: float, regenerate_occ_png: bool = True) -> None:
+def run_pipeline(
+    data_dir: Path,
+    hz: float,
+    camera_name: str = DEFAULT_CAMERA_NAME,
+    regenerate_occ_vis: bool = True,
+    occ_vis_filename: str = DEFAULT_OCC_VIS_FILENAME,
+) -> None:
     data_dir = data_dir.resolve()
     if not data_dir.is_dir():
         raise NotADirectoryError(f"Directory not found: {data_dir}")
 
-    occ_png_dir = data_dir / "occ_png"
-    front_cam_dir = data_dir / "front_cam"
+    frame_dirs = _get_frame_dirs(data_dir)
     merged_video = data_dir / "merged.mp4"
 
-    # 1. Render occ NPZ -> PNG frames
-    if regenerate_occ_png:
-        print("==> Rendering occ PNGs...")
-        render_occ_npz_sequence(input_dir=data_dir, output_dir=occ_png_dir, hz=hz, merge_video=False)
+    if regenerate_occ_vis:
+        print("==> Rendering occ visualizations...")
+        render_occ_npz_sequence(
+            input_dir=data_dir,
+            output_name=Path(occ_vis_filename).stem,
+            camera_name=camera_name,
+            hz=hz,
+            merge_video=False,
+        )
     else:
-        if not occ_png_dir.is_dir():
-            raise FileNotFoundError(f"occ_png directory not found: {occ_png_dir}")
-        if not any(occ_png_dir.glob("*.png")):
-            raise FileNotFoundError(f"No PNG files found in existing occ_png directory: {occ_png_dir}")
-        print(f"==> Reusing existing occ PNGs in {occ_png_dir}...")
+        missing_occ_vis = [frame_dir for frame_dir in frame_dirs if not (frame_dir / occ_vis_filename).is_file()]
+        if missing_occ_vis:
+            raise FileNotFoundError(
+                f"Missing {occ_vis_filename} in {len(missing_occ_vis)} timestamp folders. "
+                f"First missing folder: {missing_occ_vis[0]}"
+            )
+        print(f"==> Reusing existing {occ_vis_filename} files in timestamp folders...")
 
-    # 2. Extract FrontCam02 images
-    print("==> Extracting front cam images...")
-    extract_front_cam(data_dir)
-
-    # 3. Merge images using nearest timestamp alignment
     print("==> Generating merged video from aligned images...")
-    _generate_merged_video_from_images(front_cam_dir, occ_png_dir, hz, merged_video)
+    _generate_merged_video_from_frames(
+        frame_dirs,
+        hz,
+        merged_video,
+        camera_name=camera_name,
+        occ_vis_filename=occ_vis_filename,
+    )
 
     print(f"Done. Saved merged video to {merged_video}")
 
@@ -125,13 +117,30 @@ def main() -> None:
     parser.add_argument("dir", type=Path, help="Data directory (e.g. ./data/<hash>).")
     parser.add_argument("hz", type=float, help="Frame rate for all generated videos.")
     parser.add_argument(
-        "--reuse-occ-png",
+        "--camera-name",
+        default=DEFAULT_CAMERA_NAME,
+        help="Camera image to place on the left side and fixed directional preset to use for occ rendering. Defaults to FrontCam02.",
+    )
+    parser.add_argument(
+        "--reuse-occ-vis",
+        dest="reuse_occ_vis",
         action="store_true",
-        help="Reuse existing occ_png frames instead of rendering them again.",
+        help="Reuse existing per-frame occ_vis.png files instead of rendering them again.",
+    )
+    parser.add_argument(
+        "--reuse-occ-png",
+        dest="reuse_occ_vis",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     args = parser.parse_args()
 
-    run_pipeline(args.dir, args.hz, regenerate_occ_png=not args.reuse_occ_png)
+    run_pipeline(
+        args.dir,
+        args.hz,
+        camera_name=args.camera_name,
+        regenerate_occ_vis=not args.reuse_occ_vis,
+    )
 
 
 if __name__ == "__main__":
