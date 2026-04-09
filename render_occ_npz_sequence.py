@@ -40,12 +40,6 @@ def _parse_args():
         help="Semantic dataset key for rendering. Defaults to xc-cn.",
     )
     parser.add_argument(
-        "--empty-label",
-        type=int,
-        default=0,
-        help="Semantic label to treat as empty space. Defaults to 0.",
-    )
-    parser.add_argument(
         "--occupancy-key",
         default="occ_voxel",
         help="NPZ key that contains the occupancy grid. Defaults to occ_voxel.",
@@ -114,7 +108,6 @@ def render_occ_npz_sequence(
     output_name="occ_vis",
     camera_name=None,
     dataset="xc-cn",
-    empty_label=0,
     occupancy_key="occ_voxel",
     limit=None,
     transpose_zxy_to_xyz=True,
@@ -156,7 +149,6 @@ def render_occ_npz_sequence(
             name=output_name,
             sem=True,
             dataset=dataset,
-            empty_label=empty_label,
             camera_preset=camera_preset,
             figure_size=figure_size,
         )
@@ -179,7 +171,6 @@ def main():
         output_name=args.output_name,
         camera_name=args.camera_name,
         dataset=args.dataset,
-        empty_label=args.empty_label,
         occupancy_key=args.occupancy_key,
         limit=args.limit,
         transpose_zxy_to_xyz=not args.no_transpose,

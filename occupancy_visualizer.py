@@ -10,6 +10,7 @@ _DATASET_CONFIGS = {
     "nusc": {
         "voxel_size": [0.5, 0.5, 0.5],
         "vox_origin": [-50.0, -50.0, -5.0],
+        "empty_labels": [0],
         "vmin": 0,
         "vmax": 16,
         "semantic_upper_bound": 17,
@@ -18,6 +19,7 @@ _DATASET_CONFIGS = {
     "kitti": {
         "voxel_size": [0.2, 0.2, 0.2],
         "vox_origin": [0.0, -25.6, -2.0],
+        "empty_labels": [0],
         "vmin": 1,
         "vmax": 19,
         "semantic_upper_bound": 20,
@@ -26,22 +28,16 @@ _DATASET_CONFIGS = {
     "kitti360": {
         "voxel_size": [0.2, 0.2, 0.2],
         "vox_origin": [0.0, -25.6, -2.0],
+        "empty_labels": [0],
         "vmin": 1,
         "vmax": 18,
         "semantic_upper_bound": 19,
         "semantic_colormap": (get_kitti360_colormap()[1:, :] * 255).astype(np.uint8),
     },
     "xc-cn": {
-        "voxel_size": [0.5, 0.5, 0.5],
-        "vox_origin": [-50.0, -50.0, -5.0],
-        "vmin": 0,
-        "vmax": 12,
-        "semantic_upper_bound": 13,
-        "semantic_colormap": get_xc_cn_colormap(),
-    },
-    "xccn": {
-        "voxel_size": [0.5, 0.5, 0.5],
-        "vox_origin": [-50.0, -50.0, -5.0],
+        "voxel_size": [0.1, 0.1, 0.1],
+        "vox_origin": [-15.0, -15.0, -2.0],
+        "empty_labels": [0, 11],
         "vmin": 0,
         "vmax": 12,
         "semantic_upper_bound": 13,
@@ -158,15 +154,17 @@ def _build_grid_with_values(voxels, dataset_config):
     return np.vstack([grid_coords.T, voxels.reshape(-1)]).T
 
 
-def _filter_visible_voxels(grid_coords, sem, dataset_config, empty_label):
+def _filter_visible_voxels(grid_coords, sem, dataset_config):
     values = grid_coords[:, 3]
 
     if not sem:
         return grid_coords[(values > 0) & (values < 100)]
 
     visible_mask = (values >= 0) & (values < dataset_config["semantic_upper_bound"])
-    if empty_label is not None:
-        visible_mask &= values != empty_label
+    empty_labels = dataset_config.get("empty_labels")
+    if empty_labels is not None:
+        empty_labels_array = np.asarray(empty_labels, dtype=values.dtype)
+        visible_mask &= ~np.isin(values, empty_labels_array)
     elif dataset_config["vmin"] > 0:
         visible_mask &= values > 0
     return grid_coords[visible_mask]
@@ -332,7 +330,6 @@ def save_occ(
     cap=2,
     dataset="nusc",
     show=False,
-    empty_label=None,
     camera_preset=None,
     figure_size=None,
 ):
@@ -345,7 +342,6 @@ def save_occ(
         grid_coords,
         sem=sem,
         dataset_config=dataset_config,
-        empty_label=empty_label,
     )
 
     mlab = _get_mlab(show=show)

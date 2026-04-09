@@ -29,18 +29,44 @@ EXPECTED_CAMERA_NAMES = (
 )
 
 EXPECTED_SOURCE_FRAME_FILE_COUNT = len(FLAT_FRAME_FILENAMES) + len(EXPECTED_CAMERA_NAMES) + 1
-DEFAULT_CAMERA_VIEW_ANGLE = 100.0
-DEFAULT_CAMERA_FOCAL_DISTANCE = 20.0
-DEFAULT_CAMERA_CENTER_Z_CELL_OFFSET = 20.0
-DEFAULT_CAMERA_HEIGHT_OFFSET = 0.0
 DEFAULT_RENDER_MAX_SIDE = 1800
 
-_CAMERA_FORWARD_LOOKUP = {
-    "SurCam01": np.array([0.0, -1.0, 0.0], dtype=np.float32),
-    "SurCam02": np.array([1.0, 0.0, 0.0], dtype=np.float32),
-    "SurCam03": np.array([0.0, 1.0, 0.0], dtype=np.float32),
-    "SurCam04": np.array([-1.0, 0.0, 0.0], dtype=np.float32),
-    "FrontCam02": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+_CAMERA_PRESET_LOOKUP = {
+    "SurCam01": {
+        "position_offset": np.array([4.0, 6.0, 2.8], dtype=np.float32),
+        "forward": np.array([0.0, -1.0, 0.0], dtype=np.float32),
+        "target_offset": np.array([2.0, 0.0, -0.5], dtype=np.float32),
+        "focal_distance": 20.0,
+        "view_angle": 95.0,
+    },
+    "SurCam02": {
+        "position_offset": np.array([-5.0, 0.0, 3.0], dtype=np.float32),
+        "forward": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        "target_offset": np.array([0.0, 0.0, -0.5], dtype=np.float32),
+        "focal_distance": 20.0,
+        "view_angle": 90.0,
+    },
+    "SurCam03": {
+        "position_offset": np.array([4.0, -6.0, 2.8], dtype=np.float32),
+        "forward": np.array([0.0, 1.0, 0.0], dtype=np.float32),
+        "target_offset": np.array([2.0, 0.0, -0.5], dtype=np.float32),
+        "focal_distance": 20.0,
+        "view_angle": 95.0,
+    },
+    "SurCam04": {
+        "position_offset": np.array([5.0, 0.0, 2.5], dtype=np.float32),
+        "forward": np.array([-1.0, 0.0, 0.0], dtype=np.float32),
+        "target_offset": np.array([0.0, 0.0, -0.5], dtype=np.float32),
+        "focal_distance": 20.0,
+        "view_angle": 95.0,
+    },
+    "FrontCam02": {
+        "position_offset": np.array([-4.0, 0.0, 2.6], dtype=np.float32),
+        "forward": np.array([1.0, 0.0, 0.0], dtype=np.float32),
+        "target_offset": np.array([0.0, 0.0, -0.25], dtype=np.float32),
+        "focal_distance": 20.0,
+        "view_angle": 80.0,
+    },
 }
 
 _CAMERA_PRESET_DATASET_CONFIGS = {
@@ -57,12 +83,9 @@ _CAMERA_PRESET_DATASET_CONFIGS = {
         "vox_origin": [0.0, -25.6, -2.0],
     },
     "xc-cn": {
-        "voxel_size": [0.5, 0.5, 0.5],
-        "vox_origin": [-50.0, -50.0, -5.0],
-    },
-    "xccn": {
-        "voxel_size": [0.5, 0.5, 0.5],
-        "vox_origin": [-50.0, -50.0, -5.0],
+        "voxel_size": [0.1, 0.1, 0.1],
+        "vox_origin": [-15.0, -15.0, -2.0],
+        "origin_index": [150.0, 150.0, 20.0],
     },
 }
 
@@ -196,6 +219,13 @@ def _get_camera_preset_dataset_config(dataset: str) -> dict:
         raise ValueError(f"Unsupported dataset for camera preset lookup: {dataset}") from exc
 
 
+def _get_camera_preset_template(camera_name: str) -> dict:
+    try:
+        return _CAMERA_PRESET_LOOKUP[camera_name]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported camera name for lookup preset: {camera_name}") from exc
+
+
 def _load_reference_occ_shape(
     frame_dir: Path,
     occupancy_key: str = "occ_voxel",
@@ -217,55 +247,48 @@ def _load_reference_occ_shape(
     return tuple(int(size) for size in occupancy.shape)
 
 
-def _get_plot_space_volume_center(voxel_shape: tuple[int, int, int], dataset: str) -> np.ndarray:
+def _get_plot_space_anchor(voxel_shape: tuple[int, int, int], dataset: str) -> np.ndarray:
     dataset_config = _get_camera_preset_dataset_config(dataset)
     voxel_size = np.asarray(dataset_config["voxel_size"], dtype=np.float32)
     vox_origin = np.asarray(dataset_config["vox_origin"], dtype=np.float32)
-    dims = np.asarray(voxel_shape[:3], dtype=np.float32)
-    center = vox_origin + (dims * voxel_size / 2.0)
-    center[1] *= -1.0
-    return center
+    origin_index = dataset_config.get("origin_index")
+
+    if origin_index is None:
+        dims = np.asarray(voxel_shape[:3], dtype=np.float32)
+        anchor = vox_origin + (dims * voxel_size / 2.0)
+    else:
+        anchor = vox_origin + (np.asarray(origin_index, dtype=np.float32) * voxel_size)
+
+    anchor[1] *= -1.0
+    return anchor
 
 
 def build_camera_preset_from_lookup(
     camera_name: str,
     voxel_shape: tuple[int, int, int],
     dataset: str = "xc-cn",
-    view_angle: float = DEFAULT_CAMERA_VIEW_ANGLE,
-    focal_distance: float = DEFAULT_CAMERA_FOCAL_DISTANCE,
-    camera_center_z_cell_offset: float = DEFAULT_CAMERA_CENTER_Z_CELL_OFFSET,
-    camera_height_offset: float = DEFAULT_CAMERA_HEIGHT_OFFSET,
-    camera_target_height_offset: float = 0.0,
 ) -> dict:
-    try:
-        forward_plot = _normalize_vector(_CAMERA_FORWARD_LOOKUP[camera_name])
-    except KeyError as exc:
-        raise ValueError(f"Unsupported camera name for lookup preset: {camera_name}") from exc
+    preset_template = _get_camera_preset_template(camera_name)
+    forward_plot = _normalize_vector(preset_template["forward"])
+    plot_anchor = _get_plot_space_anchor(voxel_shape, dataset=dataset)
+    position = plot_anchor + np.asarray(preset_template["position_offset"], dtype=np.float32)
 
-    dataset_config = _get_camera_preset_dataset_config(dataset)
-    plot_center = _get_plot_space_volume_center(voxel_shape, dataset=dataset)
-    position = plot_center.copy()
-    position[2] += float(camera_center_z_cell_offset) * float(dataset_config["voxel_size"][2])
-    position[2] += float(camera_height_offset)
-
-    focal_point = plot_center + (forward_plot * float(focal_distance))
-    focal_point[2] += float(camera_target_height_offset)
+    focal_point = plot_anchor + np.asarray(preset_template["target_offset"], dtype=np.float32)
+    focal_point = focal_point + (forward_plot * float(preset_template["focal_distance"]))
 
     return {
         "position": position.tolist(),
         "focal_point": focal_point.tolist(),
         "view_up": [0.0, 0.0, 1.0],
-        "view_angle": float(view_angle),
+        "view_angle": float(preset_template["view_angle"]),
     }
 
 
 def build_camera_preset_from_extrinsic(
     extrinsic_matrix: np.ndarray,
-    view_angle: float = DEFAULT_CAMERA_VIEW_ANGLE,
-    focal_distance: float = DEFAULT_CAMERA_FOCAL_DISTANCE,
-    camera_height_offset: float = DEFAULT_CAMERA_HEIGHT_OFFSET,
-    camera_target_height_offset: float = 0.0,
+    camera_name: str,
 ) -> dict:
+    preset_template = _get_camera_preset_template(camera_name)
     camera_to_ego = np.linalg.inv(np.asarray(extrinsic_matrix, dtype=np.float32))
     rotation = camera_to_ego[:3, :3]
     position = camera_to_ego[:3, 3]
@@ -274,17 +297,15 @@ def build_camera_preset_from_extrinsic(
     view_up = rotation @ np.array([0.0, -1.0, 0.0], dtype=np.float32)
 
     position_plot = _flip_plot_y_axis(position)
-    position_plot[2] += float(camera_height_offset)
     forward_plot = _normalize_vector(_flip_plot_y_axis(forward))
     view_up_plot = _normalize_vector(_flip_plot_y_axis(view_up))
-    focal_point = position_plot + (forward_plot * float(focal_distance))
-    focal_point[2] += float(camera_target_height_offset)
+    focal_point = position_plot + (forward_plot * float(preset_template["focal_distance"]))
 
     return {
         "position": position_plot.tolist(),
         "focal_point": focal_point.tolist(),
         "view_up": view_up_plot.tolist(),
-        "view_angle": float(view_angle),
+        "view_angle": float(preset_template["view_angle"]),
     }
 
 
@@ -306,11 +327,6 @@ def get_clip_camera_render_settings(
     dataset: str = "xc-cn",
     occupancy_key: str = "occ_voxel",
     transpose_zxy_to_xyz: bool = True,
-    view_angle: float = DEFAULT_CAMERA_VIEW_ANGLE,
-    focal_distance: float = DEFAULT_CAMERA_FOCAL_DISTANCE,
-    camera_center_z_cell_offset: float = DEFAULT_CAMERA_CENTER_Z_CELL_OFFSET,
-    camera_height_offset: float = DEFAULT_CAMERA_HEIGHT_OFFSET,
-    camera_target_height_offset: float = 0.0,
     max_side: int = DEFAULT_RENDER_MAX_SIDE,
 ) -> tuple[dict, tuple[int, int]]:
     frame_dirs = list_complete_timestamp_frame_dirs(clip_dir)
@@ -327,11 +343,6 @@ def get_clip_camera_render_settings(
         camera_name=camera_name,
         voxel_shape=voxel_shape,
         dataset=dataset,
-        view_angle=view_angle,
-        focal_distance=focal_distance,
-        camera_center_z_cell_offset=camera_center_z_cell_offset,
-        camera_height_offset=camera_height_offset,
-        camera_target_height_offset=camera_target_height_offset,
     )
     figure_size = scale_figure_size(get_camera_image_size(reference_frame, camera_name=camera_name), max_side=max_side)
     return camera_preset, figure_size

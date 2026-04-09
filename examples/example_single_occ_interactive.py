@@ -21,15 +21,10 @@ from utils import (
 
 
 FRAME_DIR = ROOT_DIR / "data" / "4af3e12ea8ace222e59743f5c1370a12" / "20231125105257.100000"
-CAMERA_NAME = "SurCam02"
-CAMERA_VIEW_ANGLE = 100.0
-CAMERA_CENTER_Z_CELL_OFFSET = 20.0
-CAMERA_HEIGHT_OFFSET = 0
-CAMERA_TARGET_HEIGHT_OFFSET = 0
+CAMERA_NAME = "SurCam01"
 DATASET = "xc-cn"
 OCCUPANCY_KEY = "occ_voxel"
 OUTPUT_NAME = "occ_vis_interactive"
-EMPTY_LABEL = 0
 TRANSPOSE_ZXY_TO_XYZ = True
 SHOW_WINDOW = True
 
@@ -83,10 +78,6 @@ def main() -> None:
 		camera_name=CAMERA_NAME,
 		voxel_shape=occupancy.shape,
 		dataset=DATASET,
-		view_angle=CAMERA_VIEW_ANGLE,
-		camera_center_z_cell_offset=CAMERA_CENTER_Z_CELL_OFFSET,
-		camera_height_offset=CAMERA_HEIGHT_OFFSET,
-		camera_target_height_offset=CAMERA_TARGET_HEIGHT_OFFSET,
 	)
 	figure_size = scale_figure_size(get_camera_image_size(frame_dir, camera_name=CAMERA_NAME))
 
@@ -96,7 +87,6 @@ def main() -> None:
 		name=OUTPUT_NAME,
 		sem=True,
 		dataset=DATASET,
-		empty_label=EMPTY_LABEL,
 		show=SHOW_WINDOW,
 		camera_preset=camera_preset,
 		figure_size=figure_size,
